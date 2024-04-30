@@ -63,6 +63,6 @@ func (s *Server) GetCookieHttpOnly() bool {
 	return s.config.CookieHttpOnly
 }
 
-func (s *Server) getAccessLogUnlessCondition() string {
+func (s *Server) GetAccessLogUnlessCondition() string {
 	return s.config.AccessLogConditionUnless
 }

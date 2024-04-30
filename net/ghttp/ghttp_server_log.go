@@ -20,6 +20,11 @@ func (s *Server) handleAccessLog(r *Request) {
 	if !s.IsAccessLogEnabled() {
 		return
 	}
+
+	if s.config.AccessLogConditionUnless != "" && r.GetCtxVar(s.config.AccessLogConditionUnless, "").String() != "" {
+		return
+	}
+
 	var (
 		scheme            = r.GetSchema()
 		loggerInstanceKey = fmt.Sprintf(`Acccess Logger Of Server:%s`, s.instance)

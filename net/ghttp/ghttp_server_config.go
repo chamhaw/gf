@@ -214,6 +214,7 @@ type ServerConfig struct {
 	ErrorLogPattern  string       `json:"errorLogPattern"`  // ErrorLogPattern specifies the error log file pattern like: error-{Ymd}.log
 	AccessLogEnabled bool         `json:"accessLogEnabled"` // AccessLogEnabled enables access logging content to files.
 	AccessLogPattern string       `json:"accessLogPattern"` // AccessLogPattern specifies the error log file pattern like: access-{Ymd}.log
+	AccessLogStdout  bool         `json:"accessLogStdout"`  // AccessLogStdout specifies whether printing access logging content to stdout if LogStdout is true.
 
 	// ======================================================================================================
 	// PProf.

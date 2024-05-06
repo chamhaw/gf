@@ -35,11 +35,11 @@ func (s *Server) handleAccessLog(r *Request) {
 		float64(r.LeaveTime.Sub(r.EnterTime).Milliseconds())/1000,
 		r.GetClientIp(), r.Referer(), r.UserAgent(),
 	)
-	logStdout := s.config.LogStdout && s.config.AccessLogStdout
+	logStdout := s.config.LogStdout && !s.config.AccessLogStdoutDisabled
 	logger := instance.GetOrSetFuncLock(loggerInstanceKey, func() interface{} {
 		l := s.Logger().Clone()
 		l.SetFile(s.config.AccessLogPattern)
-		l.SetStdoutPrint(logStdout)
+		l.SetStdoutPrint(!logStdout)
 		l.SetLevelPrint(false)
 		return l
 	}).(*glog.Logger)

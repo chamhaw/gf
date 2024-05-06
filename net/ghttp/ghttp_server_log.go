@@ -21,7 +21,7 @@ func (s *Server) handleAccessLog(r *Request) {
 		return
 	}
 
-	if s.config.AccessLogConditionUnless != "" && r.GetCtxVar(s.config.AccessLogConditionUnless, "").String() != "" {
+	if s.config.AccessLogConditionUnless != "" && r.GetCtxVar(s.config.AccessLogConditionUnless).String() != "" {
 		return
 	}
 

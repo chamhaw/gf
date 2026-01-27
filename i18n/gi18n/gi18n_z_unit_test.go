@@ -7,17 +7,15 @@
 package gi18n_test
 
 import (
-	"time"
-
-	"github.com/gogf/gf/v2/encoding/gbase64"
-	"github.com/gogf/gf/v2/os/gctx"
-
 	"context"
 	"testing"
+	"time"
 
 	"github.com/gogf/gf/v2/debug/gdebug"
+	"github.com/gogf/gf/v2/encoding/gbase64"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/i18n/gi18n"
+	"github.com/gogf/gf/v2/os/gctx"
 	"github.com/gogf/gf/v2/os/gfile"
 	"github.com/gogf/gf/v2/os/gres"
 	"github.com/gogf/gf/v2/os/gtime"
@@ -259,5 +257,27 @@ func Test_PathInNormal(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		i18n.SetLanguage("en-US")
 		t.Assert(i18n.T(context.Background(), "{#lang}"), "en-US")
+	})
+}
+
+func Test_Issue_Yaml(t *testing.T) {
+	// Copy i18n files to current directory.
+	err := gfile.CopyDir(
+		gtest.DataPath("issue-yaml"),
+		gfile.Join(gdebug.CallerDirectory(), "manifest/i18n"),
+	)
+	// Remove copied files after testing.
+	defer gfile.RemoveAll(gfile.Join(gdebug.CallerDirectory(), "manifest"))
+
+	gtest.AssertNil(err)
+
+	var (
+		i18n = gi18n.New()
+		ctx  = context.Background()
+	)
+
+	gtest.C(t, func(t *gtest.T) {
+		i18n.SetLanguage("zh")
+		t.Assert(i18n.T(ctx, "{#resourceUsage.workflow}"), "workflow")
 	})
 }

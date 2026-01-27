@@ -35,7 +35,7 @@ func (s *Server) handleAccessLog(r *Request) {
 		float64(r.LeaveTime.Sub(r.EnterTime).Milliseconds())/1000,
 		r.GetClientIp(), r.Referer(), r.UserAgent(),
 	)
-	logger := instance.GetOrSetFuncLock(loggerInstanceKey, func() interface{} {
+	logger := instance.GetOrSetFuncLock(loggerInstanceKey, func() any {
 		l := s.Logger().Clone()
 		l.SetFile(s.config.AccessLogPattern)
 		l.SetStdoutPrint(s.config.LogStdout && !s.config.AccessLogStdoutDisabled)
@@ -77,7 +77,7 @@ func (s *Server) handleErrorLog(err error, r *Request) {
 	} else {
 		content += ", " + err.Error()
 	}
-	logger := instance.GetOrSetFuncLock(loggerInstanceKey, func() interface{} {
+	logger := instance.GetOrSetFuncLock(loggerInstanceKey, func() any {
 		l := s.Logger().Clone()
 		l.SetStack(false)
 		l.SetFile(s.config.ErrorLogPattern)

@@ -27,22 +27,22 @@ import (
 
 // Watcher is the monitor for file changes.
 type Watcher struct {
-	watcher   *fsnotify.Watcher // Underlying fsnotify object.
-	events    *gqueue.Queue     // Used for internal event management.
-	cache     *gcache.Cache     // Used for repeated event filter.
-	nameSet   *gset.StrSet      // Used for AddOnce feature.
-	callbacks *gmap.StrAnyMap   // Path(file/folder) to callbacks mapping.
-	closeChan chan struct{}     // Used for watcher closing notification.
+	watcher   *fsnotify.Watcher                            // Underlying fsnotify object.
+	events    *gqueue.TQueue[*Event]                       // Used for internal event management.
+	cache     *gcache.Cache                                // Used for repeated event filter.
+	nameSet   *gset.StrSet                                 // Used for AddOnce feature.
+	callbacks *gmap.KVMap[string, *glist.TList[*Callback]] // Path(file/folder) to callbacks mapping.
+	closeChan chan struct{}                                // Used for watcher closing notification.
 }
 
 // Callback is the callback function for Watcher.
 type Callback struct {
-	Id        int                // Unique id for callback object.
-	Func      func(event *Event) // Callback function.
-	Path      string             // Bound file path (absolute).
-	name      string             // Registered name for AddOnce.
-	elem      *glist.Element     // Element in the callbacks of watcher.
-	recursive bool               // Is bound to path recursively or not.
+	Id        int                        // Unique id for callback object.
+	Func      func(event *Event)         // Callback function.
+	Path      string                     // Bound file path (absolute).
+	name      string                     // Registered name for AddOnce.
+	elem      *glist.TElement[*Callback] // Element in the callbacks of watcher.
+	recursive bool                       // Is bound to sub-path recursively or not.
 }
 
 // Event is the event produced by underlying fsnotify.
@@ -51,6 +51,15 @@ type Event struct {
 	Path    string         // Absolute file path.
 	Op      Op             // File operation.
 	Watcher *Watcher       // Parent watcher.
+}
+
+// WatchOption holds the option for watching.
+type WatchOption struct {
+	// NoRecursive explicitly specifies no recursive watching.
+	// Recursive watching will also watch all its current and following created subfolders and sub-files.
+	//
+	// Note that the recursive watching is enabled in default.
+	NoRecursive bool
 }
 
 // Op is the bits union for file operations.
@@ -73,22 +82,26 @@ const (
 )
 
 var (
-	mu                  sync.Mutex                // Mutex for concurrent safety of defaultWatcher.
-	defaultWatcher      *Watcher                  // Default watcher.
-	callbackIdMap       = gmap.NewIntAnyMap(true) // Id to callback mapping.
-	callbackIdGenerator = gtype.NewInt()          // Atomic id generator for callback.
+	callBacksChecker     = func(v *glist.TList[*Callback]) bool { return v == nil }             // callBacksChecker checks whether the value is nil.
+	callbackIdMapChecker = func(v *Callback) bool { return v == nil }                           // callbackIdMapChecker checks whether the value is nil.
+	mu                   sync.Mutex                                                             // Mutex for concurrent safety of defaultWatcher.
+	defaultWatcher       *Watcher                                                               // Default watcher.
+	callbackIdMap        = gmap.NewKVMapWithChecker[int, *Callback](callbackIdMapChecker, true) // Global callback id to callback function mapping.
+	callbackIdGenerator  = gtype.NewInt()                                                       // Atomic id generator for callback.
 )
 
 // New creates and returns a new watcher.
 // Note that the watcher number is limited by the file handle setting of the system.
-// Eg: fs.inotify.max_user_instances system variable in linux systems.
+// Example: fs.inotify.max_user_instances system variable in linux systems.
+//
+// In most case, you can use the default watcher for usage instead of creating one.
 func New() (*Watcher, error) {
 	w := &Watcher{
 		cache:     gcache.New(),
-		events:    gqueue.New(),
+		events:    gqueue.NewTQueue[*Event](),
 		nameSet:   gset.NewStrSet(true),
 		closeChan: make(chan struct{}),
-		callbacks: gmap.NewStrAnyMap(true),
+		callbacks: gmap.NewKVMapWithChecker[string, *glist.TList[*Callback]](callBacksChecker, true),
 	}
 	if watcher, err := fsnotify.NewWatcher(); err == nil {
 		w.watcher = watcher
@@ -102,26 +115,30 @@ func New() (*Watcher, error) {
 }
 
 // Add monitors `path` using default watcher with callback function `callbackFunc`.
+//
+// The parameter `path` can be either a file or a directory path.
 // The optional parameter `recursive` specifies whether monitoring the `path` recursively, which is true in default.
-func Add(path string, callbackFunc func(event *Event), recursive ...bool) (callback *Callback, err error) {
+func Add(path string, callbackFunc func(event *Event), option ...WatchOption) (callback *Callback, err error) {
 	w, err := getDefaultWatcher()
 	if err != nil {
 		return nil, err
 	}
-	return w.Add(path, callbackFunc, recursive...)
+	return w.Add(path, callbackFunc, option...)
 }
 
 // AddOnce monitors `path` using default watcher with callback function `callbackFunc` only once using unique name `name`.
-// If AddOnce is called multiple times with the same `name` parameter, `path` is only added to monitor once. It returns error
-// if it's called twice with the same `name`.
 //
+// If AddOnce is called multiple times with the same `name` parameter, `path` is only added to monitor once.
+// It returns error if it's called twice with the same `name`.
+//
+// The parameter `path` can be either a file or a directory path.
 // The optional parameter `recursive` specifies whether monitoring the `path` recursively, which is true in default.
-func AddOnce(name, path string, callbackFunc func(event *Event), recursive ...bool) (callback *Callback, err error) {
+func AddOnce(name, path string, callbackFunc func(event *Event), option ...WatchOption) (callback *Callback, err error) {
 	w, err := getDefaultWatcher()
 	if err != nil {
 		return nil, err
 	}
-	return w.AddOnce(name, path, callbackFunc, recursive...)
+	return w.AddOnce(name, path, callbackFunc, option...)
 }
 
 // Remove removes all monitoring callbacks of given `path` from watcher recursively.
@@ -134,19 +151,15 @@ func Remove(path string) error {
 }
 
 // RemoveCallback removes specified callback with given id from watcher.
-func RemoveCallback(callbackId int) error {
+func RemoveCallback(callbackID int) error {
 	w, err := getDefaultWatcher()
 	if err != nil {
 		return err
 	}
-	callback := (*Callback)(nil)
-	if r := callbackIdMap.Get(callbackId); r != nil {
-		callback = r.(*Callback)
+	if callback := callbackIdMap.Get(callbackID); callback == nil {
+		return gerror.NewCodef(gcode.CodeInvalidParameter, `callback for id %d not found`, callbackID)
 	}
-	if callback == nil {
-		return gerror.NewCodef(gcode.CodeInvalidParameter, `callback for id %d not found`, callbackId)
-	}
-	w.RemoveCallback(callbackId)
+	w.RemoveCallback(callbackID)
 	return nil
 }
 
